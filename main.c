@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <stdbool.h>
 
 #include <SDL.h>
@@ -23,12 +24,12 @@ struct channel {
 	int id;
 	enum channel_type type;
 	float t;
+	float duration;
 	float gain[2];
 	generator fn_gen;
 
 	// BIP
 	float bip_freq;
-	float bip_duration;
 };
 
 
@@ -90,9 +91,9 @@ int main(int argc, char **argv)
 void handle_line(struct bip *bip, const char *buf)
 {
 	printf("> %s", buf);
-	int l = strlen(buf);
-	float freq = 200 + l * 50;
-	play_bip(bip, freq, 0.005);
+	int l = strlen(buf) % 60;
+	float freq = 110 * powf(1.05946309, l);
+	play_bip(bip, freq, 0.05);
 }
 
 
@@ -125,7 +126,7 @@ float gen_idle(struct channel *ch)
 
 float gen_bip(struct channel *ch)
 {
-	if(ch->t >= ch->bip_duration) {
+	if(ch->t >= ch->duration) {
 		ch->type = CHANNEL_TYPE_IDLE;
 	}
 
@@ -141,12 +142,20 @@ void play_bip(struct bip *bip, float freq, float duration)
 	ch->t = 0.0;
 	ch->type = CHANNEL_TYPE_BIP;
 	ch->bip_freq = freq;
-	ch->bip_duration = duration;
+	ch->duration = duration;
 	ch->fn_gen = gen_bip;
-
-	printf("ch %d: bip %f %f\n", ch->id, freq, duration);
+	//printf("ch %d: bip %f %f\n", ch->id, freq, duration);
 }
 
+
+static float window(struct channel *ch)
+{
+	if(ch->duration > 0) {
+		return cos(M_PI * 2 * ch->t / ch->duration) * -0.5 + 0.5;
+	} else {
+		return 0;
+	}
+}
 
 
 static void on_audio(void *userdata, uint8_t *stream, int len)
@@ -164,8 +173,10 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 				v = ch->fn_gen(ch);
 			}
 
-			sout[j+0] += v * ch->gain[0];
-			sout[j+1] += v * ch->gain[1];
+			float w = window(ch);
+
+			sout[j+0] += v * w * ch->gain[0];
+			sout[j+1] += v * w * ch->gain[1];
 			ch->t += 1.0/SRATE;
 		}
 
