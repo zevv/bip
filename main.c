@@ -11,18 +11,12 @@
 #define FRAGSIZE 256
 #define SRATE 48000
 
-enum channel_type {
-	CHANNEL_TYPE_IDLE,
-	CHANNEL_TYPE_BIP,
-};
-
 struct channel;
 
 typedef float (*generator)(struct channel *channel);
 
 struct channel {
 	int id;
-	enum channel_type type;
 	float t;
 	float duration;
 	float gain[2];
@@ -51,7 +45,6 @@ int main(int argc, char **argv)
 	for(size_t i=0; i<MAX_CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
 		ch->id = i;
-		ch->type = CHANNEL_TYPE_IDLE;
 	}
 
 	SDL_Init(SDL_INIT_AUDIO);
@@ -91,7 +84,7 @@ int main(int argc, char **argv)
 void handle_line(struct bip *bip, const char *buf)
 {
 	printf("> %s", buf);
-	int l = strlen(buf) % 60;
+	int l = strlen(buf) % 40;
 	float freq = 110 * powf(1.05946309, l);
 	play_bip(bip, freq, 0.05);
 }
@@ -104,7 +97,7 @@ struct channel *find_channel(struct bip *bip)
 
 	for(size_t i=0; i<MAX_CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
-		if(ch->type == CHANNEL_TYPE_IDLE) {
+		if(ch->fn_gen == NULL) {
 			rv = ch;
 			break;
 		}
@@ -127,7 +120,7 @@ float gen_idle(struct channel *ch)
 float gen_bip(struct channel *ch)
 {
 	if(ch->t >= ch->duration) {
-		ch->type = CHANNEL_TYPE_IDLE;
+		ch->fn_gen = NULL;
 	}
 
 	return cos(ch->t * ch->bip_freq * M_PI * 2);
@@ -140,7 +133,6 @@ void play_bip(struct bip *bip, float freq, float duration)
 	ch->gain[0] = 0.5 / MAX_CHANNELS;
 	ch->gain[1] = 0.5 / MAX_CHANNELS;
 	ch->t = 0.0;
-	ch->type = CHANNEL_TYPE_BIP;
 	ch->bip_freq = freq;
 	ch->duration = duration;
 	ch->fn_gen = gen_bip;
@@ -167,14 +159,8 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 		struct channel *ch = &bip->channel_list[i];
 
 		for(size_t j=0; j<FRAGSIZE*2; j+=2) {
-			float v = 0;
-
-			if(ch->type == CHANNEL_TYPE_BIP) {
-				v = ch->fn_gen(ch);
-			}
-
+			float v = ch->fn_gen ? ch->fn_gen(ch) : 0.0;
 			float w = window(ch);
-
 			sout[j+0] += v * w * ch->gain[0];
 			sout[j+1] += v * w * ch->gain[1];
 			ch->t += 1.0/SRATE;
