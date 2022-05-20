@@ -42,7 +42,6 @@ struct channel {
 	float duration;
 	float gain[2];
 	float window;
-	generator fn_gen;
 	struct osc osc;
 	struct biquad biquad;
 };
@@ -65,7 +64,6 @@ static void handle_stdin(struct bip *bip);
 static void handle_char(struct bip *bip, char c);
 static void handle_line(struct bip *bip);
 static struct channel *alloc_channel(struct bip *bip, float gain, float pan);
-static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan, float filter);
 static void on_audio(void *userdata, uint8_t *stream, int len);
 static bool load_lua(struct bip *bip);
 static bool call_lua(struct bip *bip, int nargs);
@@ -286,7 +284,8 @@ static struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 
 	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
-		if(ch->fn_gen == NULL) {
+		if(ch->window == 0.0) {
+			printf("free");
 			rv = ch;
 			break;
 		}
@@ -306,22 +305,9 @@ static struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 
 
 
-static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan, float filter)
-{
-	struct channel *ch = alloc_channel(bip, gain, pan);
-	ch->duration = duration;
-
-	osc_set_type(&ch->osc, OSC_TYPE_SAW);
-	osc_set_freq(&ch->osc, freq);
-
-	biquad_init(&ch->biquad, SRATE);
-	biquad_config(&ch->biquad, BIQUAD_TYPE_LP, freq * filter, 1.0);
-}
-
-
 static float window(struct channel *ch)
 {
-	float dw = 0.05;
+	float dw = 0.01;
 	if(ch->t < ch->duration) {
 		ch->window += dw;
 	} else {
@@ -351,8 +337,6 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 				sout[j+0] += v * w * ch->gain[0];
 				sout[j+1] += v * w * ch->gain[1];
 				ch->t += 1.0/SRATE;
-			} else {
-				ch->fn_gen = NULL;
 			}
 		}
 	}
@@ -373,16 +357,55 @@ static int l_traceback(lua_State *L)
 
 static int l_bip(lua_State *L)
 {
-	float freq = luaL_optnumber(L, 1, 1000);
-	float duration = luaL_optnumber(L, 2, 0.01);
-	float gain = luaL_optnumber(L, 3, 1.0);
-	float pan = luaL_optnumber(L, 4, 0.0);
-	float filter = luaL_optnumber(L, 5, 1.0);
+	float freq = 0;
+	float gain = 0;
+	float duration = 0;
+	float pan = 0;
+	float filter = 0;
+	float dutycycle = 0.5;
+	enum osc_type osc_type = OSC_TYPE_SIN;
+
+	if(lua_istable(L, 1)) {
+		const char *typename;
+		lua_getfield(L, 1, "freq"); freq = luaL_optnumber(L, -1, 1000);
+		lua_getfield(L, 1, "duration"); duration = luaL_optnumber(L, -1, 0.01);
+		lua_getfield(L, 1, "gain"); gain = luaL_optnumber(L, -1, 1.0);
+		lua_getfield(L, 1, "pan"); pan = luaL_optnumber(L, -1, 0.0);
+		lua_getfield(L, 1, "filter"); filter = luaL_optnumber(L, -1, 1.0);
+		lua_getfield(L, 1, "type"); typename = luaL_optstring(L, -1, "sin");
+		lua_getfield(L, 1, "dc"); dutycycle = luaL_optnumber(L, -1, 0.5);
+
+		if(strncmp(typename, "saw", 3) == 0) osc_type = OSC_TYPE_SAW;
+		if(strncmp(typename, "pul", 3) == 0) osc_type = OSC_TYPE_PULSE;
+		if(strncmp(typename, "tri", 3) == 0) osc_type = OSC_TYPE_TRIANGLE;;
+
+	} else {
+		freq = luaL_optnumber(L, 1, 1000);
+		duration = luaL_optnumber(L, 2, 0.01);
+		gain = luaL_optnumber(L, 3, 1.0);
+		pan = luaL_optnumber(L, 4, 0.0);
+		filter = luaL_optnumber(L, 5, 1.0);
+	}
 
 	lua_getfield(L, LUA_REGISTRYINDEX, "bip");
 	struct bip *bip = lua_touserdata(L, -1);
 
-	play_bip(bip, freq, duration, gain, pan, filter);
+	// Allocate channel
+
+	struct channel *ch = alloc_channel(bip, gain, pan);
+	if(ch == NULL) {
+		return 0;
+	}
+	ch->duration = duration;
+
+	// Setup osc and filter
+
+	osc_set_type(&ch->osc, osc_type);
+	osc_set_freq(&ch->osc, freq);
+	osc_set_dutycycle(&ch->osc, dutycycle);
+
+	biquad_init(&ch->biquad, SRATE);
+	biquad_config(&ch->biquad, BIQUAD_TYPE_LP, freq * filter, 1.0);
 
 	return 0;
 }
