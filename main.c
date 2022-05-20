@@ -1,6 +1,6 @@
 
 #include <stdio.h>
-#include <math.h>
+//#include <math.h>
 #include <sys/poll.h>
 #include <time.h>
 #include <sys/stat.h>
@@ -17,6 +17,7 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
+#include "osc.h"
 #include "biquad.h"
 
 #define CHANNELS 16
@@ -43,12 +44,8 @@ struct channel {
 	float gain[2];
 	float window;
 	generator fn_gen;
+	struct osc osc;
 	struct biquad biquad;
-
-	// bip
-	float bip_freq;
-	float phase;
-	float dphase;
 };
 
 
@@ -69,7 +66,7 @@ static void handle_stdin(struct bip *bip);
 static void handle_char(struct bip *bip, char c);
 static void handle_line(struct bip *bip);
 static struct channel *alloc_channel(struct bip *bip, float gain, float pan);
-static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan);
+static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan, float filter);
 static void on_audio(void *userdata, uint8_t *stream, int len);
 static bool load_lua(struct bip *bip);
 static bool call_lua(struct bip *bip, int nargs);
@@ -89,6 +86,7 @@ int main(int argc, char **argv)
 	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
 		ch->id = i;
+		osc_init(&ch->osc, SRATE);
 	}
 
 	if(argc >= 2) {
@@ -142,7 +140,6 @@ static void init_lua(struct bip *bip)
 
 static void init_audio(struct bip *bip)
 {
-
 	SDL_Init(SDL_INIT_AUDIO);
 
 	SDL_AudioSpec want = {
@@ -310,55 +307,17 @@ static struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 }
 
 
-/*
- * polyblep: http://www.kvraudio.com/forum/viewtopic.php?t=375517
- */
 
-float poly_blep(float t, float dt)
-{
-        if (t < dt) {
-                t /= dt;
-                return t+t - t*t - 1.;
-        } else if (t > 1. - dt) {
-                t = (t - 1.) / dt;
-                return t*t + t+t + 1.;
-        } else {
-                return 0.;
-	}
-}
-
-
-float gen_sin(struct channel *ch)
-{
-	return cos(ch->t * ch->bip_freq * M_PI * 2);
-}
-
-
-float gen_saw(struct channel *ch)
-{
-	ch->phase += ch->dphase;
-	if(ch->phase > 1.0) {
-		ch->phase -= 1.0;
-	}
-
-	float val = ch->phase * 2.0 - 1.0;
-	val -= poly_blep(ch->phase, ch->dphase);
-
-	return val;
-}
-
-
-static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan)
+static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan, float filter)
 {
 	struct channel *ch = alloc_channel(bip, gain, pan);
-	ch->bip_freq = freq;
 	ch->duration = duration;
-	ch->fn_gen = gen_sin;
-	ch->phase = 0;
-	ch->dphase = freq / SRATE;
 
-	//biquad_init(&rv->biquad, SRATE);
-	//biquad_config(&ch->biquad, BIQUAD_TYPE_LP, freq * 5.0, 1.0);
+	osc_set_type(&ch->osc, OSC_TYPE_SAW);
+	osc_set_freq(&ch->osc, freq);
+
+	biquad_init(&ch->biquad, SRATE);
+	biquad_config(&ch->biquad, BIQUAD_TYPE_LP, freq * filter, 1.0);
 }
 
 
@@ -386,10 +345,10 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 		struct channel *ch = &bip->channel_list[i];
 		for(size_t j=0; j<FRAGSIZE*2; j+=2) {
 			float w = window(ch);
-			if(w > 0.0 && ch->fn_gen) {
-				float v = ch->fn_gen(ch);
+			if(w > 0.0) {
+				float v = osc_gen(&ch->osc);
 
-				//v = biquad_run(&ch->biquad, v);
+				v = biquad_run(&ch->biquad, v);
 
 				sout[j+0] += v * w * ch->gain[0];
 				sout[j+1] += v * w * ch->gain[1];
@@ -420,11 +379,12 @@ static int l_bip(lua_State *L)
 	float duration = luaL_optnumber(L, 2, 0.01);
 	float gain = luaL_optnumber(L, 3, 1.0);
 	float pan = luaL_optnumber(L, 4, 0.0);
+	float filter = luaL_optnumber(L, 5, 1.0);
 
 	lua_getfield(L, LUA_REGISTRYINDEX, "bip");
 	struct bip *bip = lua_touserdata(L, -1);
 
-	play_bip(bip, freq, duration, gain, pan);
+	play_bip(bip, freq, duration, gain, pan, filter);
 
 	return 0;
 }
