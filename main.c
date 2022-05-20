@@ -7,7 +7,7 @@
 
 #include <SDL.h>
 
-#define MAX_CHANNELS 16
+#define CHANNELS 16
 #define FRAGSIZE 256
 #define SRATE 48000
 
@@ -22,27 +22,28 @@ struct channel {
 	float gain[2];
 	generator fn_gen;
 
-	// BIP
+	// bip
 	float bip_freq;
 };
 
 
 struct bip {
 	SDL_AudioDeviceID adev;
-	struct channel channel_list[MAX_CHANNELS];
+	struct channel channel_list[CHANNELS];
 };
 
 
 
 void handle_line(struct bip *bip, const char *l);
-struct channel *find_channel(struct bip *bip);
+struct channel *find_channel(struct bip *bip, float gain, float pan);
 void play_bip(struct bip *bip, float freq, float duration);
 static void on_audio(void *userdata, uint8_t *stream, int len);
+
 
 int main(int argc, char **argv)
 {
 	struct bip *bip = calloc(1, sizeof(struct bip));
-	for(size_t i=0; i<MAX_CHANNELS; i++) {
+	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
 		ch->id = i;
 	}
@@ -81,21 +82,29 @@ int main(int argc, char **argv)
 }
 
 
-void handle_line(struct bip *bip, const char *buf)
+void handle_line(struct bip *bip, const char *line)
 {
-	printf("> %s", buf);
-	int l = strlen(buf) % 40;
+	printf("%s", line);
+	int l = strlen(line) % 40;
 	float freq = 110 * powf(1.05946309, l);
 	play_bip(bip, freq, 0.05);
 }
 
 
-struct channel *find_channel(struct bip *bip)
+static float clamp(float f, float min, float max)
+{
+	if(f < min) f = min;
+	if(f > max) f = max;
+	return f;
+}
+		
+
+struct channel *find_channel(struct bip *bip, float gain, float pan)
 {
 	size_t t_max = 0;
 	struct channel *rv = NULL;
 
-	for(size_t i=0; i<MAX_CHANNELS; i++) {
+	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
 		if(ch->fn_gen == NULL) {
 			rv = ch;
@@ -107,6 +116,9 @@ struct channel *find_channel(struct bip *bip)
 		}
 	}
 
+	rv->gain[0] = clamp(gain - pan, 0.0, 1.0) / CHANNELS;
+	rv->gain[1] = clamp(gain + pan, 0.0, 1.0) / CHANNELS;
+	rv->t = 0.0;
 	return rv;
 }
 
@@ -129,14 +141,10 @@ float gen_bip(struct channel *ch)
 
 void play_bip(struct bip *bip, float freq, float duration)
 {
-	struct channel *ch = find_channel(bip);
-	ch->gain[0] = 0.5 / MAX_CHANNELS;
-	ch->gain[1] = 0.5 / MAX_CHANNELS;
-	ch->t = 0.0;
+	struct channel *ch = find_channel(bip, 0.5, -1);
 	ch->bip_freq = freq;
 	ch->duration = duration;
 	ch->fn_gen = gen_bip;
-	//printf("ch %d: bip %f %f\n", ch->id, freq, duration);
 }
 
 
@@ -153,11 +161,12 @@ static float window(struct channel *ch)
 static void on_audio(void *userdata, uint8_t *stream, int len)
 {
 	struct bip *bip = userdata;
-	float sout[FRAGSIZE * 2] = { 0 };
+	float *sout = (float *)stream;
 
-	for(size_t i=0; i<MAX_CHANNELS; i++) {
+	memset(sout, 0, len);
+
+	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
-
 		for(size_t j=0; j<FRAGSIZE*2; j+=2) {
 			float v = ch->fn_gen ? ch->fn_gen(ch) : 0.0;
 			float w = window(ch);
@@ -165,9 +174,6 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 			sout[j+1] += v * w * ch->gain[1];
 			ch->t += 1.0/SRATE;
 		}
-
 	}
-
-	memcpy(stream, sout, len);
-
 }
+
