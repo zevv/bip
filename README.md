@@ -4,7 +4,7 @@
 Bip parses text and emits bleeps to let you hear what's happening. Great for analysis of
 real time info like log files, network dumps or output of complex program.
 
-Blip is basically a tiny multi-channel synthesizer that is driven from a
+Bip is basically a tiny multi-channel synthesizer that is driven from a
 litte Lua script; Lua parses the text and generates sounds on the synth.
 
 ```
