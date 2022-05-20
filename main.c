@@ -30,6 +30,7 @@ struct channel {
 	float t;
 	float duration;
 	float gain[2];
+	float window;
 	generator fn_gen;
 
 	// bip
@@ -53,7 +54,7 @@ static void init_audio(struct bip *bip);
 static void handle_stdin(struct bip *bip);
 static void handle_char(struct bip *bip, char c);
 static void handle_line(struct bip *bip);
-static struct channel *find_channel(struct bip *bip, float gain, float pan);
+static struct channel *alloc_channel(struct bip *bip, float gain, float pan);
 static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan);
 static void on_audio(void *userdata, uint8_t *stream, int len);
 static void load_lua(struct bip *bip);
@@ -90,10 +91,9 @@ int main(int argc, char **argv)
 
 	handle_stdin(bip);
 
-	SDL_CloseAudioDevice(bip->adev);
-
 	// Cleanup
 
+	SDL_CloseAudioDevice(bip->adev);
 	lua_close(bip->L);
 	free(bip);
 
@@ -259,7 +259,7 @@ static float clamp(float f, float min, float max)
 }
 
 
-static struct channel *find_channel(struct bip *bip, float gain, float pan)
+static struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 {
 	size_t t_max = 0;
 	struct channel *rv = NULL;
@@ -279,23 +279,20 @@ static struct channel *find_channel(struct bip *bip, float gain, float pan)
 	rv->gain[0] = clamp(gain - pan, -1.0, 1.0) / CHANNELS;
 	rv->gain[1] = clamp(gain + pan, -1.0, 1.0) / CHANNELS;
 	rv->t = 0.0;
+	rv->window = 0.0;
 	return rv;
 }
 
 
 static float gen_bip(struct channel *ch)
 {
-	if(ch->t >= ch->duration) {
-		ch->fn_gen = NULL;
-	}
-
 	return cos(ch->t * ch->bip_freq * M_PI * 2);
 }
 
 
 static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan)
 {
-	struct channel *ch = find_channel(bip, gain, pan);
+	struct channel *ch = alloc_channel(bip, gain, pan);
 	ch->bip_freq = freq;
 	ch->duration = duration;
 	ch->fn_gen = gen_bip;
@@ -304,11 +301,14 @@ static void play_bip(struct bip *bip, float freq, float duration, float gain, fl
 
 static float window(struct channel *ch)
 {
-	if(ch->duration > 0) {
-		return cos(M_PI * 2 * ch->t / ch->duration) * -0.5 + 0.5;
+	float dw = 0.05;
+	if(ch->t < ch->duration) {
+		ch->window += dw;
 	} else {
-		return 0;
+		ch->window -= dw;
 	}
+	ch->window = clamp(ch->window, 0.0, 1.0);
+	return ch->window;
 }
 
 
@@ -322,11 +322,15 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
 		for(size_t j=0; j<FRAGSIZE*2; j+=2) {
-			float v = ch->fn_gen ? ch->fn_gen(ch) : 0.0;
 			float w = window(ch);
-			sout[j+0] += v * w * ch->gain[0];
-			sout[j+1] += v * w * ch->gain[1];
-			ch->t += 1.0/SRATE;
+			if(w > 0.0 && ch->fn_gen) {
+				float v = ch->fn_gen(ch);
+				sout[j+0] += v * w * ch->gain[0];
+				sout[j+1] += v * w * ch->gain[1];
+				ch->t += 1.0/SRATE;
+			} else {
+				ch->fn_gen = NULL;
+			}
 		}
 	}
 }
