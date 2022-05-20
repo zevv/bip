@@ -1,15 +1,6 @@
 
 ## Bip
 
-```
- _     _       
-| |__ (_)_ __  
-| '_ \| | '_ \ 
-| |_) | | |_) |
-|_.__/|_| .__/ 
-        |_|
-```
-
 Bip parses text and emits bleeps to let you hear what's happening. Great for analysis of
 real time info like log files, network dumps or output of complex program.
 
