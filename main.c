@@ -21,6 +21,15 @@
 #define FRAGSIZE 256
 #define SRATE 48000
 
+const char *default_bip_lua =
+	"function on_line(line)"
+	"	local l = #line"
+	"	local freq = 110 * math.pow(1.05946309, (l-10) % 60)"
+	"	pan = (l % 16) / 8 - 1.0"
+	"	bip(freq, 0.05, 1.0, pan)"
+	"end";
+
+
 struct channel;
 
 typedef float (*generator)(struct channel *channel);
@@ -57,8 +66,8 @@ static void handle_line(struct bip *bip);
 static struct channel *alloc_channel(struct bip *bip, float gain, float pan);
 static void play_bip(struct bip *bip, float freq, float duration, float gain, float pan);
 static void on_audio(void *userdata, uint8_t *stream, int len);
-static void load_lua(struct bip *bip);
-static void call_lua(struct bip *bip, int nargs);
+static bool load_lua(struct bip *bip);
+static bool call_lua(struct bip *bip, int nargs);
 
 // Lua API
 
@@ -113,6 +122,15 @@ static void init_lua(struct bip *bip)
 	lua_pushcfunction(bip->L, l_bip); lua_setglobal(bip->L, "bip");
 	lua_pushcfunction(bip->L, l_hash); lua_setglobal(bip->L, "hash");
 
+	// Load simple built-in script
+	int r = luaL_loadstring(bip->L, default_bip_lua);
+	if(r != 0) {
+		fprintf(stderr, "error: %s\n", lua_tostring(bip->L, -1));
+		return;
+	}
+	call_lua(bip, 0);
+
+	// Try to load user provided bip.lua
 	load_lua(bip);
 }
 
@@ -181,10 +199,8 @@ static void handle_stdin(struct bip *bip)
 static void handle_char(struct bip *bip, char c)
 {
 	if(c == '\n' || c == '\r') {
-		if(bip->len > 0) {
-			bip->line[bip->len] = '\0';
-			handle_line(bip);
-		}
+		bip->line[bip->len] = '\0';
+		handle_line(bip);
 		bip->len = 0;
 	} else {
 		if(bip->len < sizeof(bip->line)-1) {
@@ -195,17 +211,17 @@ static void handle_char(struct bip *bip, char c)
 }
 
 
-static void load_lua(struct bip *bip)
+static bool load_lua(struct bip *bip)
 {
 	struct stat st;
 	int r = lstat(bip->fname_lua, &st);
 	if(r < 0) {
 		fprintf(stderr, "%s: %s\n", bip->fname_lua, strerror(errno));
-		exit(1);
+		return false;
 	}
 
 	if(st.st_mtime == bip->mtime_lua) {
-		return;
+		return true;
 	}
 
 	bip->mtime_lua = st.st_mtime;
@@ -213,23 +229,26 @@ static void load_lua(struct bip *bip)
 	r = luaL_loadfile(bip->L, bip->fname_lua);
 	if(r != 0) {
                 fprintf(stderr, "error: %s\n", lua_tostring(bip->L, -1));
-                return;
+                return false;
         }
 
-	call_lua(bip, 0);
+	return call_lua(bip, 0);
 }
 
 
-static void call_lua(struct bip *bip, int nargs)
+static bool call_lua(struct bip *bip, int nargs)
 {
 	lua_pushcfunction(bip->L, l_traceback);
 	int traceback_idx = 1;
 	lua_insert(bip->L, traceback_idx);
 
 	int r = lua_pcall(bip->L, nargs, 0, traceback_idx);
-	if(r != 0) {
+	if(r == 0) {
+		return true;
+	} else {
                 fprintf(stderr, "error: %s\n", lua_tostring(bip->L, -1));
 		l_traceback(bip->L);
+		return false;
 	}
 }
 

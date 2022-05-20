@@ -18,7 +18,8 @@ Copy `bip.lua` to `~/.bip.lua` and edit the code to make the beeps match your in
 
 Pipe anything to `bip`.
 
-Default lua file is `~/.bip.lua`, or provide a file name to load on the command line.
+Default lua file is `~/.bip.lua`, or provide a lua script file name to load on
+the command line.
 
 Bip wil periodically reload the lua file when modified, so you can tweak your bips in
 a running session without having to restart.
