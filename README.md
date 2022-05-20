@@ -25,7 +25,8 @@ Copy `bip.lua` to `~/.bip.lua` and edit the code to make the beeps match your in
 
 ## Usage
 
-Pipe anything to `bip`.
+Pipe anything to `bip`, and optionally write your own little Lua filters to match
+the bips with your input. See the examples below.
 
 Default lua file is `~/.bip.lua`, or provide a lua script file name to load on
 the command line.
