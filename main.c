@@ -17,6 +17,8 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
+#include "biquad.h"
+
 #define CHANNELS 16
 #define FRAGSIZE 256
 #define SRATE 48000
@@ -41,9 +43,12 @@ struct channel {
 	float gain[2];
 	float window;
 	generator fn_gen;
+	struct biquad biquad;
 
 	// bip
 	float bip_freq;
+	float phase;
+	float dphase;
 };
 
 
@@ -300,13 +305,46 @@ static struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 	rv->gain[1] = clamp(gain + pan, -1.0, 1.0) / CHANNELS;
 	rv->t = 0.0;
 	rv->window = 0.0;
+
 	return rv;
 }
 
 
-static float gen_bip(struct channel *ch)
+/*
+ * polyblep: http://www.kvraudio.com/forum/viewtopic.php?t=375517
+ */
+
+float poly_blep(float t, float dt)
+{
+        if (t < dt) {
+                t /= dt;
+                return t+t - t*t - 1.;
+        } else if (t > 1. - dt) {
+                t = (t - 1.) / dt;
+                return t*t + t+t + 1.;
+        } else {
+                return 0.;
+	}
+}
+
+
+float gen_sin(struct channel *ch)
 {
 	return cos(ch->t * ch->bip_freq * M_PI * 2);
+}
+
+
+float gen_saw(struct channel *ch)
+{
+	ch->phase += ch->dphase;
+	if(ch->phase > 1.0) {
+		ch->phase -= 1.0;
+	}
+
+	float val = ch->phase * 2.0 - 1.0;
+	val -= poly_blep(ch->phase, ch->dphase);
+
+	return val;
 }
 
 
@@ -315,7 +353,12 @@ static void play_bip(struct bip *bip, float freq, float duration, float gain, fl
 	struct channel *ch = alloc_channel(bip, gain, pan);
 	ch->bip_freq = freq;
 	ch->duration = duration;
-	ch->fn_gen = gen_bip;
+	ch->fn_gen = gen_sin;
+	ch->phase = 0;
+	ch->dphase = freq / SRATE;
+
+	//biquad_init(&rv->biquad, SRATE);
+	//biquad_config(&ch->biquad, BIQUAD_TYPE_LP, freq * 5.0, 1.0);
 }
 
 
@@ -345,6 +388,9 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 			float w = window(ch);
 			if(w > 0.0 && ch->fn_gen) {
 				float v = ch->fn_gen(ch);
+
+				//v = biquad_run(&ch->biquad, v);
+
 				sout[j+0] += v * w * ch->gain[0];
 				sout[j+1] += v * w * ch->gain[1];
 				ch->t += 1.0/SRATE;

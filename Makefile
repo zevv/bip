@@ -1,6 +1,6 @@
 
 BIN := bip
-SRC := main.c
+SRC := main.c biquad.c
 
 OBJS := $(subst .c,.o, $(SRC))
 DEPS := $(subst .c,.d, $(SRC))
