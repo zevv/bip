@@ -54,14 +54,12 @@ with the following lua script:
 
 ```
 function on_line(line)
-
-	local s, d = line:match("IP (%S+) > (%S-):")
-	if s and d then
-		local i = hash(s) + hash(d)
-		local freq = 110 * math.pow(1.05946309, (i % 40) + 20)
-		local pan = (i % 16) / 8 - 1.0
-		bip(freq, 0.02, 1.0, pan)
-	end
+   for src, dst in line:gmatch("IP (%S+) > (%S-):") do
+      local i = hash(src) + hash(dst)
+      local freq = 110 * math.pow(1.05946309, (i % 40) + 20)
+      local pan = (i % 16) / 8 - 1.0
+      bip(freq, 0.02, 1.0, pan)
+   end
 end
 ```
 
