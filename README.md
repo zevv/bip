@@ -11,10 +11,17 @@ real time info like log files, network dumps or output of complex program.
 make
 ```
 
+Copy `bip.lua` to `~/.bip.lua` and edit the code to make the beeps match your input.
+
 
 ## Usage
 
-Copy bip.lua to ~/.bip.lua and edit the code to make the beeps match your input
+Pipe anything to `bip`.
+
+Default lua file is `~/.bip.lua`, or provide a file name to load on the command line.
+
+Bip wil periodically reload the lua file when modified, so you can tweak your bips in
+a running session without having to restart.
 
 
 ## Examples
