@@ -285,7 +285,6 @@ static struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
 		if(ch->window == 0.0) {
-			printf("free");
 			rv = ch;
 			break;
 		}
