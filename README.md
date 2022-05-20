@@ -26,19 +26,44 @@ a running session without having to restart.
 
 ## Examples
 
-Tail your syslog:
+### Tail your syslog:
 
 ```
 journalctl -f | bip
 ```
 
-Interactive shell with sound. (This will break some programs requiring a true
-tty though)
+### Interactive shell with sound. 
 
 ```
 bash | bip
 ```
 
+This will break some programs requiring a true tty though
+
+
+### Live network inspection
+
+Run tcpdump in real time and generate an unique pitch and pan for each source
+and destination:
+
+```
+sudo tcpdump --immediate-mode -i enp8s0 -n -l | bip
+```
+
+with the following lua script:
+
+```
+function on_line(line)
+
+	local s, d = line:match("IP (%S+) > (%S-):")
+	if s and d then
+		local i = hash(s) + hash(d)
+		local freq = 110 * math.pow(1.05946309, (i % 40) + 20)
+		local pan = (i % 16) / 8 - 1.0
+		bip(freq, 0.02, 1.0, pan)
+	end
+end
+```
 
 ## Lua API
 
@@ -65,4 +90,12 @@ pan: -1.0 .. 1.0
 
 Play a beep with the given frequency, duration, gain and pan
 
+
+```
+hash(s)
+
+s: string
+```
+
+Generates a simple hash integer from the given string.
 

@@ -64,6 +64,7 @@ static void call_lua(struct bip *bip, int nargs);
 
 static int l_traceback(lua_State *L);
 static int l_bip(lua_State *L);
+static int l_hash(lua_State *L);
 
 
 int main(int argc, char **argv)
@@ -109,8 +110,8 @@ static void init_lua(struct bip *bip)
 	lua_pushlightuserdata(bip->L, bip);
 	lua_setfield(bip->L, LUA_REGISTRYINDEX, "bip");
 
-	lua_pushcfunction(bip->L, l_bip);
-	lua_setglobal(bip->L, "bip");
+	lua_pushcfunction(bip->L, l_bip); lua_setglobal(bip->L, "bip");
+	lua_pushcfunction(bip->L, l_hash); lua_setglobal(bip->L, "hash");
 
 	load_lua(bip);
 }
@@ -362,5 +363,24 @@ static int l_bip(lua_State *L)
 
 	return 0;
 }
+
+
+static int l_hash(lua_State *L)
+{
+	size_t len;
+	const char *buf = luaL_checklstring(L, 1, &len);
+
+	uint8_t a = 0;
+	uint8_t b = 0;
+
+	for(size_t i=0; i<len; i++) {
+		a += (uint8_t)buf[i];
+		b += a;
+	}
+	
+	lua_pushinteger(L, (a << 8) | b);
+	return 1;
+}
+
 
 
