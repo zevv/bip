@@ -38,7 +38,6 @@ struct channel;
 typedef float (*generator)(struct channel *channel);
 
 struct channel {
-	int id;
 	float t;
 	float duration;
 	float gain[2];
@@ -85,7 +84,6 @@ int main(int argc, char **argv)
 	struct bip *bip = calloc(1, sizeof(struct bip));
 	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
-		ch->id = i;
 		osc_init(&ch->osc, SRATE);
 	}
 
