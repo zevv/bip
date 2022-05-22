@@ -16,13 +16,18 @@
 #include "osc.h"
 #include "biquad.h"
 
-const char *default_bip_lua =
-	"function on_line(line)"
-	"	local l = #line"
-	"	local freq = 110 * math.pow(1.05946309, (l-10) % 60)"
-	"	pan = (l % 16) / 8 - 1.0"
-	"	bip(freq, 0.05, 1.0, pan)"
-	"end";
+#define DOC(...) #__VA_ARGS__
+
+const char *default_bip_lua = DOC(
+
+   function on_line(line)
+      local l = #line
+      local freq = 110 * math.pow(1.05946309, (l-10) % 60)
+      pan = (l % 16) / 8 - 1.0
+      bip(freq, 0.05, 1.0, pan)
+   end
+
+);
 
 
 struct channel;
