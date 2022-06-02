@@ -255,7 +255,7 @@ struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 
 	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
-		if(ch->window == 0.0) {
+		if(!ch->busy) {
 			rv = ch;
 			break;
 		}
@@ -269,6 +269,7 @@ struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 	rv->gain[1] = clamp(gain + pan, -1.0, 1.0) / CHANNELS;
 	rv->t = 0.0;
 	rv->window = 0.0;
+	rv->busy = true;
 
 	return rv;
 }
@@ -298,8 +299,8 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 	for(size_t i=0; i<CHANNELS; i++) {
 		struct channel *ch = &bip->channel_list[i];
 		for(size_t j=0; j<FRAGSIZE*2; j+=2) {
-			float w = window(ch);
-			if(w > 0.0) {
+			if(ch->busy) {
+				float w = window(ch);
 				float v = osc_gen(&ch->osc);
 
 				v = biquad_run(&ch->biquad, v);
@@ -307,6 +308,10 @@ static void on_audio(void *userdata, uint8_t *stream, int len)
 				sout[j+0] += v * w * ch->gain[0];
 				sout[j+1] += v * w * ch->gain[1];
 				ch->t += 1.0/SRATE;
+
+				if(w == 0.0) {
+					ch->busy = false;
+				}
 			}
 		}
 	}

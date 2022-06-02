@@ -17,6 +17,7 @@ struct channel {
 	float duration;
 	float gain[2];
 	float window;
+	bool busy;
 	struct osc osc;
 	struct biquad biquad;
 };
