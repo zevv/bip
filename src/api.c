@@ -34,6 +34,7 @@ int l_bip(lua_State *L)
 	
 	lua_getfield(L, LUA_REGISTRYINDEX, "bip");
 	struct bip *bip = lua_touserdata(L, -1);
+	lua_pop(L, 1);
 
 	if(lua_istable(L, 1)) {
 		const char *typename;

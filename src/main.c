@@ -278,7 +278,7 @@ struct channel *alloc_channel(struct bip *bip, float gain, float pan)
 
 static float window(struct channel *ch)
 {
-	float dw = 0.01;
+	float dw = 1.0 / (SRATE * 0.005);
 	if(ch->t < ch->duration) {
 		ch->window += dw;
 	} else {
